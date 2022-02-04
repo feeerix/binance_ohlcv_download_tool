@@ -3,18 +3,14 @@ import os.path
 from os import walk
 import os
 from urllib.parse import urlencode
-from urllib.parse import quote_plus
-import urllib3
-import json
 import requests as req
 import hmac
 import hashlib
 import math
-import ast
 from constants import *
 from datetime import *
 import time
-import ccxt
+from zipfile import ZipFile
 
 
 """
@@ -30,7 +26,7 @@ def get_margin_type(symbol):
     inverse_exchange_info = pd.read_csv(binance_inverse_exchange_info_file)
     linear_exchange_info = pd.read_csv(binance_linear_exchange_info_file)
 
-    if '.spot' in symbol:
+    if '_spot' in symbol:
         return SPOT
 
     elif inverse_exchange_info['symbol'].isin([symbol]).any():
@@ -454,6 +450,58 @@ def nextdate(the_date):
     return f'{year}-{month}-{day}'
 
 
+def next_day_from(timecode):
+    # print(f'next day from {timecode} // {convert_timecode_to_readable(timecode)}')
+    return convert_readable_date_to_timecode(nextdate(convert_timecode_to_readable(timecode).split(' ')[0]))
+
+
+def end_of_month_from(timecode):
+    return convert_readable_date_to_timecode(next_month_first(convert_timecode_to_readable(timecode)))
+
+
+def is_midnight(timecode):
+    if convert_timecode_to_readable(timecode).split(' ')[1] == '00:00:00':
+        return True
+    else:
+        return False
+
+
+def is_first_of_month(timecode):
+    if get_date_from_timecode(timecode) == '01':
+        return True
+    else:
+        return False
+
+
+def month_exists(filepath, timecode):
+    """
+    Finds out if the specific month is in the filepath
+    :param filepath: str
+    :param timecode: int
+    :return: bool
+    """
+    filelist = list_of_files(filepath)
+
+    month = get_month_from_timecode(timecode)
+    year = get_year_from_timecode(timecode)
+    exchange = filepath.split('/')[2].upper()
+    symbol = filepath.split('/')[4].upper()
+    interval = filepath.split('/')[-1]
+
+    # f"{interval}_{symbol}_BINANCE_OHLCDB-{month}-{year}.csv"
+    filename = f"{interval}_{symbol}_{exchange}_OHLCDB-{month}-{year}.csv"
+    if filename in filelist:
+        return True
+    else:
+        return False
+
+
+def ohlc_filename_timecode(interval, symbol, timecode):
+    month = get_month_from_timecode(timecode)
+    year = get_year_from_timecode(timecode)
+    return f"{interval}_{symbol}_BINANCE_OHLCDB-{month}-{year}.csv"
+
+
 """
 REST API TOOLS
 """
@@ -518,20 +566,6 @@ def servertime():
     return int(req.get(binance_inverse_base_url + '/dapi/v1/time').json()['serverTime'] / 1000) * 1000
 
 
-def write_exchangeinfo(mode=None):
-    """
-    Function to write specific exchange information
-    :param mode: int
-    :return: None
-    """
-    if mode is None:
-        for x in range(3):
-            get_exchange_info(x)
-
-    else:
-        get_exchange_info(mode)
-
-
 def get_exchange_info(mode):
     """
     :param mode: int
@@ -566,7 +600,14 @@ def get_exchange_info(mode):
         base_url
     )
 
+    # Create dataframe
     df = pd.DataFrame(exchangeinfo['symbols'])
+
+    # Adding suffix to symbol due to name overlap
+    if mode == 'spot':
+        df['symbol'] = df['symbol'].apply(lambda symbol: f"{symbol}_SPOT")
+
+    # Write dataframe to csv
     df.to_csv(filepath)
 
     print(f'Updated and saved Binance {mode} exchange info to CSV.')
@@ -625,6 +666,131 @@ def get_klines(symbol, interval, **kwargs):
         res = res.append(kline, ignore_index=True)
 
     return res
+
+
+"""
+DATABASE TOOLS
+"""
+
+
+def get_latest_ohlc_filetime(filepath):
+    dbo = next(
+        walk(f'{filepath}'), (None, None, [])
+    )[2]  # [] if no file
+    latest_file = None
+    for files in dbo:
+        parse = files.split('_')[-1].split('.')[0].split('-')
+        if latest_file is None:
+            latest_file = files
+        else:
+            if int(parse[-1]) >= int(latest_file.split('_')[-1].split('.')[0].split('-')[-1]):
+                latest_file = files
+                if int(parse[-2]) >= int(latest_file.split('_')[-1].split('.')[0].split('-')[-2]):
+                    latest_file = files
+    lfile = pd.read_csv(f'{filepath}/{latest_file}')
+    return lfile['time'].iloc[-1]
+
+
+def get_latest_ohlc_file(filepath):
+    dbo = next(
+        walk(f'{filepath}'), (None, None, [])
+    )[2]  # [] if no file
+    latest_file = None
+    for files in dbo:
+        parse = files.split('_')[-1].split('.')[0].split('-')
+        if latest_file is None:
+            latest_file = files
+        else:
+            if int(parse[-1]) >= int(latest_file.split('_')[-1].split('.')[0].split('-')[-1]):
+                latest_file = files
+                if int(parse[-2]) >= int(latest_file.split('_')[-1].split('.')[0].split('-')[-2]):
+                    latest_file = files
+    return latest_file
+
+
+def get_earliest_ohlc_file(filepath):
+    dbo = next(
+        walk(filepath), (None, None, [])
+    )[2]  # [] if no file
+    earliest_file = None
+    for files in dbo:
+        parse = files.split('_')[-1].split('.')[0].split('-')
+        if earliest_file is None:
+            earliest_file = files
+        else:
+            if int(parse[-1]) < int(earliest_file.split('_')[-1].split('.')[0].split('-')[-1]):
+                earliest_file = files
+                if int(parse[-2]) < int(earliest_file.split('_')[-1].split('.')[0].split('-')[-2]):
+                    earliest_file = files
+    return earliest_file
+
+
+def get_earliest_ohlc_filetime(filepath):
+    """
+    Get the earliest ohlc filetime for specific filepath
+    Filepath Example: data/ohlc/binance/linear/BTCUSDT/5m/
+    :param filepath:
+    :return:
+    """
+    # print(f'Getting earliest ohlc filetime for: {filepath}')
+
+    dbo = next(
+        walk(filepath), (None, None, [])
+    )[2]  # [] if no file
+    earliest_file = None
+    for files in dbo:
+        parse = files.split('_')[-1].split('.')[0].split('-')
+        if earliest_file is None:
+            earliest_file = files
+        else:
+            if int(parse[-1]) < int(earliest_file.split('_')[-1].split('.')[0].split('-')[-1]):
+                earliest_file = files
+                if int(parse[-2]) < int(earliest_file.split('_')[-1].split('.')[0].split('-')[-2]):
+                    earliest_file = files
+
+    efile = pd.read_csv(f'{filepath}/{earliest_file}')
+    return efile['time'].iloc[0]
+
+
+def write_db(symbol, interval, str_date, dataframe):
+    """
+    symbol,
+    intervals,
+    f'{year}-{month}-01',
+    new_month
+    """
+    margin_type = get_margin_type(symbol)
+    month = str_date.split('-')[1]
+    year = str_date.split('-')[0]
+    filename = f"{interval}_{symbol}_BINANCE_OHLCDB-{month}-{year}.csv"
+    filepath = ''
+    if margin_type == INVERSE:
+        filepath += f'{binance_ohlc_filepath}{margin_type.lower()}/{symbol}/'
+    elif margin_type == LINEAR:
+        filepath += f'{binance_ohlc_filepath}{margin_type.lower()}/{symbol}/'
+
+    check_create_fp(filepath)
+    filepath += f'{interval}/'
+    check_create_fp(filepath)
+    dataframe.to_csv(
+        filepath+filename,
+        index=False
+    )
+    print(f'Written file: {filename}')
+
+
+def write_exchangeinfo(mode=None):
+    """
+    Function to write specific exchange information
+    :param mode: int
+    :return: None
+    """
+    if mode is None:
+        for x in range(3):
+            get_exchange_info(x)
+
+    else:
+        get_exchange_info(mode)
 
 
 def batch_binance_downloader(symbol, interval, batch_type, **kwargs):
@@ -709,7 +875,7 @@ def batch_binance_downloader(symbol, interval, batch_type, **kwargs):
             print(f"Filename: {filename}")
 
             print('Adjusting to intraday')
-            batch_type = 'intraday'
+            # batch_type = 'intraday'
 
     # Batch type tells us how large of a batch we are downloading, monthly, daily or intraday
     else:
@@ -776,3 +942,237 @@ def batch_binance_downloader(symbol, interval, batch_type, **kwargs):
             time.sleep(0.06)
         # Function to return data
         return ret_file
+
+
+def batch_chunks(start, end):
+    """
+    All the parameters are integers, interval is for unix_interval
+
+    :param start: int starttime in timecode
+    :param end: int endtime in timecode
+    :return: list
+    """
+
+    # Variable Definition
+    itr_start = start
+    chunk_list = []
+    running = True
+    # last_closed = get_last_closed_time(unix_interval)
+
+    while running is True:
+        if itr_start == end:  # If we have reached the end of the list
+            # Exit loop
+            break
+
+        elif itr_start > end:  # We've gone too far, edit previous one
+
+            # General Solution
+            chunk_list[-1] = [
+                chunk_list[-2][1],  # End of previous one
+                end,
+                'intraday'
+            ]
+
+            # If the daily CSV is not out yet
+
+            break
+        if end > next_day_from(itr_start):
+            if not is_first_of_month(itr_start):  # If it's not the first of the month
+
+                if not is_midnight(itr_start):  # If it's not midnight
+
+                    chunk = [
+                        itr_start,
+                        next_day_from(itr_start),
+                        'intraday'
+                    ]
+                    itr_start = next_day_from(itr_start)
+
+                else:
+                    chunk = [
+                        itr_start,
+                        next_day_from(itr_start),
+                        'daily'
+                    ]
+
+                    itr_start = next_day_from(itr_start)
+            elif is_midnight(itr_start):  # If it's first of the month and midnight
+
+                if end >= end_of_month_from(itr_start):
+                    chunk = [
+                        itr_start,
+                        end_of_month_from(itr_start),
+                        'monthly'
+                    ]
+                    itr_start = end_of_month_from(itr_start)
+
+                elif end > next_day_from(itr_start):
+                    chunk = [
+                        itr_start,
+                        next_day_from(itr_start),
+                        'daily'
+                    ]
+
+                    itr_start = next_day_from(itr_start)
+
+                else:
+                    chunk = [
+                        itr_start,
+                        next_day_from(itr_start),
+                        'intraday'
+                    ]
+
+                    itr_start = next_day_from(itr_start)
+            else:
+                chunk = [
+                    itr_start,
+                    next_day_from(itr_start),
+                    'intraday'
+                ]
+
+                itr_start = next_day_from(itr_start)
+        else:
+            # Intraday only
+            chunk = [
+                itr_start,
+                end,
+                'intraday'
+            ]
+
+            itr_start = end
+
+        chunk_list.append(chunk)
+
+    return chunk_list
+
+
+def update_db(symbol, start_time, end_time):
+    """
+    Symbol in string form; Ex: 'BTCUSD'
+    start and end time in int form
+
+    if the start_time is 0 -> start update from last candle
+    if end_time is 0 -> update to last closed candle
+
+    :param symbol: str
+    :param start_time: int
+    :param end_time: int
+    :return: None
+    """
+
+    print('-----------------------------------------------')
+    print(f'Beginning download for symbol: {symbol}')
+
+    # Variabe definition
+    margin_type = get_margin_type(symbol)
+    filepath = binance_ohlc_filepath
+
+    # Define filepath
+    if margin_type == INVERSE:
+        filepath += f'{margin_type.lower()}/{symbol}/'
+
+    elif margin_type == LINEAR:
+        filepath += f'{margin_type.lower()}/{symbol}/'
+
+    # Create filepath if needed
+    check_create_fp(filepath)
+
+    # Download loop - Intervals
+    for intervals in scraper_interval_table:  # For all intervals
+
+        # Debug Print -- interval
+        print(f'--- INTERVAL // {intervals} ---')
+        print(f"Beginning update for interval: {intervals}")
+
+        # Variable definition
+        next_candle = None
+        intr_filepath = filepath + intervals + '/'  # interim filepath
+        check_create_fp(intr_filepath)  # Create for interval if needed
+        unix_interval = convert_str_interval_to_unix(intervals)  # unix interval
+        monthly_db_list = list_of_files(intr_filepath)  # List of all files in the intr_filepath
+
+        if len(monthly_db_list) > 0:
+            # Next candle
+            next_candle = int(get_latest_ohlc_filetime(intr_filepath)) + unix_interval
+
+        elif len(monthly_db_list) == 0 and start_time == 0:
+            # Directory is empty but start_time set to update from last candle
+            print('Cannot update from last candle as directory is empty!')
+            return None
+
+        if start_time == 0:
+            start_time = next_candle
+
+        if end_time == 0:
+            end_time = get_last_closed_time(unix_interval)
+
+        """
+        Gaps in the data are going to be dealt at a higher abstraction level than here, utilising
+        this function so that I can fill the gaps accordingly.
+
+        We assume that there are no gaps the last candle listed and the start date we have
+        """
+
+        chunk_list = batch_chunks(start_time, end_time)
+        print(f"CHUNK LIST FOR {intervals}")
+        print(chunk_list)
+
+        current_db_chunk = pd.DataFrame(columns=ohlc_col)
+
+        while len(chunk_list) > 0:  # While there are still items on the chunk list
+
+            # Current chunk we're downloading
+            current_chunk = chunk_list.pop(0)
+
+            # Debug print
+            print(f"Downloading chunk: {current_chunk}")
+
+            new_db_chunk = batch_binance_downloader(
+                symbol,
+                intervals,
+                current_chunk[2],
+                starttime=current_chunk[0],
+                endtime=current_chunk[1]
+            )  # Data
+
+            if month_exists(intr_filepath, current_chunk[0]) and len(current_db_chunk) == 0:
+                # The monthly file exists
+                print('Monthly file exists')
+
+                # Read the existing monthly file
+                current_db_chunk = pd.read_csv(ohlc_filename_timecode(intervals, symbol, current_chunk[0]))
+
+                # Append the new db to current db chunk
+                current_db_chunk = current_db_chunk.append(
+                    new_db_chunk,
+                    ignore_index=True
+                )
+
+                print('new_db_chunk appended.')
+
+            else:  # The monthly file does not exist
+
+                if current_chunk[2] != 'monthly':  # If we are in daily/intraday chunk
+
+                    # Append the new db to current db chunk
+                    current_db_chunk = current_db_chunk.append(
+                        new_db_chunk,
+                        ignore_index=True
+                    )
+
+            # If we still have chunks left to download
+            if len(chunk_list) > 0:
+                # If the current chunk is a different month as next chunk
+                if get_month_from_timecode(chunk_list[0][0]) != get_month_from_timecode(current_chunk[0]):
+                    # Write db
+                    write_db(symbol, intervals, convert_timecode_to_readable(current_chunk[0]).split(' ')[0],
+                             new_db_chunk)
+            else:
+                # Write db
+                write_db(symbol, intervals, convert_timecode_to_readable(current_chunk[0]).split(' ')[0],
+                         current_db_chunk)
+
+        print(f'--- END INTERVAL // {intervals}---')
+
+    # End
+    print('-----------------------------------------------')
