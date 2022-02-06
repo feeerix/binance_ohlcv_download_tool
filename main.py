@@ -4,7 +4,9 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_colwidth', None)
 
-symbol = 'BTCUSD_PERP'
-interval = '15m'
+#
+# write_exchangeinfo()
 
-update_binance_db()
+symbol = 'MANAUSD_PERP'
+
+update_db(symbol, 0, 0)

@@ -36,6 +36,13 @@ def get_margin_type(symbol):
         return LINEAR
 
 
+def create_structure():
+    """
+    Only run this once,
+    :return:
+    """
+
+
 """
 DOWNLOAD TOOLS
 """
@@ -367,6 +374,19 @@ def lastmonth(month):
         return f'0{int(month) - 1}'
 
 
+def last_month_full(the_date):
+    month = the_date.split('-')[1]
+    year = the_date.split('-')[0]
+    if int(month) > 9:
+        month = str(int(month) - 1)
+    elif month == '01':
+        month = '12'
+        year = str(int(year) - 1)
+    else:
+        month = f'0{int(month) - 1}'
+    return f'{year}-{month}-01'
+
+
 def last_month_first(the_date):
     month = the_date.split('-')[1]
     year = the_date.split('-')[0]
@@ -500,6 +520,38 @@ def ohlc_filename_timecode(interval, symbol, timecode):
     month = get_month_from_timecode(timecode)
     year = get_year_from_timecode(timecode)
     return f"{interval}_{symbol}_BINANCE_OHLCDB-{month}-{year}.csv"
+
+
+def db_link_exists(timecode, symbol, interval, mode):
+    the_date = convert_timecode_to_readable(timecode).split(' ')[0]
+    # https://data.binance.vision/data/futures/cm/monthly/klines/ADAUSD_PERP/1m/ADAUSD_PERP-1m-2020-08.zip
+    linkpath = 'https://data.binance.vision/data/futures/'
+    margin_type = get_margin_type(symbol)
+    dateparse = the_date.split('-')
+
+    if margin_type == INVERSE:
+        linkpath += 'cm/'
+
+    elif margin_type == LINEAR:
+        linkpath += 'um/'
+
+    linkpath += f'{mode}/klines/{symbol}/{interval}/'
+
+    filename = f"{symbol}-{interval}-{dateparse[0]}-{dateparse[1]}.zip"
+    print(f"Checking: {filename}")
+
+    if link_exists(linkpath+filename):
+        return True
+
+    else:
+        return False
+
+
+def timecode_date_convert(timecode, new_func):
+    inter_val = new_func(
+        convert_timecode_to_readable(timecode).split(' ')[0]
+    )
+    return convert_readable_date_to_timecode(inter_val)
 
 
 """
@@ -1046,7 +1098,64 @@ def batch_chunks(start, end):
     return chunk_list
 
 
-def update_db(symbol, start_time, end_time):
+def earliest_online_db(symbol, interval):
+    """
+    0 -> intraday
+    1 -> daily
+    2 -> monthly
+    3 -> yearly
+
+    Negative is looking back in time
+    """
+    confirmed_date = currenttime()
+    homing_date = convert_readable_date_to_timecode(
+        f'{last_month_full(convert_timecode_to_readable(currenttime()).split(" ")[0])}'
+    )
+    homing_interval = -2
+    mode = 'monthly'
+    while True:
+
+        if db_link_exists(homing_date, symbol, interval, 'monthly'):
+            print(f"db for {convert_timecode_to_readable(homing_date).split(' ')[0]} exists")
+            confirmed_date = convert_timecode_to_readable(homing_date)
+
+            if homing_interval == -2:  # Go back one year
+                homing_date = timecode_date_convert(
+                    homing_date,
+                    last_year
+                )
+
+            elif homing_interval == -1:
+                homing_date = timecode_date_convert(
+                    homing_date,
+                    last_month_full
+                )
+
+        else:
+            # Go back! We went too far
+            homing_date = convert_readable_date_to_timecode(confirmed_date.split(' ')[0])
+            homing_interval += 1
+
+        if homing_interval == 0:
+            datesplit = confirmed_date.split(' ')[0].split('-')
+            linkpath = 'https://data.binance.vision/data/futures/'
+            margin_type = get_margin_type(symbol)
+
+            if margin_type == INVERSE:
+                linkpath += 'cm/'
+
+            elif margin_type == LINEAR:
+                linkpath += 'um/'
+
+            linkpath += f'{mode}/klines/{symbol}/{interval}/'
+            return {
+                'linkpath': linkpath,
+                'filename': f"{symbol}-{interval}-{datesplit[0]}-{datesplit[1]}.zip",
+                'timecode': convert_readable_date_to_timecode(confirmed_date.split(' ')[0])
+            }
+
+
+def update_db(symbol, start_time, end_time, **kwargs):
     """
     Symbol in string form; Ex: 'BTCUSD'
     start and end time in int form
@@ -1077,8 +1186,13 @@ def update_db(symbol, start_time, end_time):
     # Create filepath if needed
     check_create_fp(filepath)
 
+    dl_list = scraper_interval_table
+
+    if 'interval' in kwargs:
+        dl_list = [kwargs['interval']]
+
     # Download loop - Intervals
-    for intervals in scraper_interval_table:  # For all intervals
+    for intervals in dl_list:  # For all intervals
 
         # Debug Print -- interval
         print(f'--- INTERVAL // {intervals} ---')
@@ -1096,22 +1210,13 @@ def update_db(symbol, start_time, end_time):
             next_candle = int(get_latest_ohlc_filetime(intr_filepath)) + unix_interval
 
         elif len(monthly_db_list) == 0 and start_time == 0:
-            # Directory is empty but start_time set to update from last candle
-            print('Cannot update from last candle as directory is empty!')
-            return None
+            start_time = earliest_online_db(symbol, intervals)['timecode']
 
         if start_time == 0:
             start_time = next_candle
 
         if end_time == 0:
             end_time = get_last_closed_time(unix_interval)
-
-        """
-        Gaps in the data are going to be dealt at a higher abstraction level than here, utilising
-        this function so that I can fill the gaps accordingly.
-
-        We assume that there are no gaps the last candle listed and the start date we have
-        """
 
         chunk_list = batch_chunks(start_time, end_time)
         print(f"CHUNK LIST FOR {intervals}")
@@ -1174,5 +1279,4 @@ def update_db(symbol, start_time, end_time):
 
         print(f'--- END INTERVAL // {intervals}---')
 
-    # End
     print('-----------------------------------------------')

@@ -1,6 +1,5 @@
 import configparser
 
-
 binance_intervaltable = {
     '1m': 60,
     '5m': 300,
@@ -55,23 +54,13 @@ binance_linear_ws_url = 'wss://fstream.binance.com/ws/'
 binance_batch_futures_link = 'https://data.binance.vision/data/futures/'
 
 # BINANCE ENDPOINTS
-binance_inverse_order_ep = '/dapi/v1/order'
-binance_inverse_batch_order_ep = '/dapi/v1/batchOrders'
-binance_inverse_commission_ep = '/dapi/v1/commissionRate'
+
 binance_inverse_cont_ep = '/dapi/v1/continuousKlines'
 binance_inverse_klines_ep = '/dapi/v1/klines'
-binance_inverse_allopenorders_ep = '/dapi/v1/allOpenOrders'
-binance_inverse_balance_ep = '/dapi/v1/balance'
-binance_inverse_account_ep = '/dapi/v1/account'
-binance_inverse_fundingrate_ep = '/dapi/v1/fundingRate'
 binance_inverse_exchange_info_ep = '/dapi/v1/exchangeInfo'
 
-binance_linear_fundingrate_ep = '/fapi/v1/fundingRate'
 binance_linear_klines_ep = '/fapi/v1/klines'
-binance_linear_commission_ep = '/fapi/v1/commissionRate'
 binance_linear_cont_ep = '/fapi/v1/continuousKlines'
-binance_linear_order_ep = '/fapi/v1/order'
-binance_linear_account_ep = '/fapi/v2/balance'
 binance_linear_exchange_info_ep = '/fapi/v1/exchangeInfo'
 
 binance_spot_exchange_info_ep = '/api/v3/exchangeInfo'
@@ -98,18 +87,6 @@ SPOT = 'SPOT'
 
 # DATAFRAME COLUMNS
 ohlc_col = ['time', 'open', 'high', 'low', 'close', 'volume']
-
-binance_wallet_col = [
-    'asset',
-    'walletBalance',
-    'availableBalance'
-]
-
-binance_usdt_wallet_col = [
-    'asset',
-    'crossWalletBalance',
-    'availableBalance'
-]
 
 binance_symbol_info_col = [
     'name',
