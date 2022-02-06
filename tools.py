@@ -18,6 +18,20 @@ LOCAL TOOLS
 """
 
 
+def create_folder_structure():
+    for fp in binance_folder_structure:
+        check_create_fp(fp)
+
+
+def create_api_cfg(apikey, apisecret):
+    api_file = open(cfg_filepath, 'w+')
+    api_file.write(f'{api_file_lines[0]}\n')
+    api_file.write(f'{api_file_lines[1]}{apikey}\n')
+    api_file.write(f'{api_file_lines[2]}{apisecret}\n')
+    api_file.close()
+
+
+
 def currenttime():
     return int(time.time())
 

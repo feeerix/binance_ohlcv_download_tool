@@ -116,16 +116,28 @@ binance_inverse_symbol_info_col = [
 
 # FILEPATHS
 
-db_filepath = 'data/DB/'
-account_filepath = 'data/acc/'
-
-# BINANCE
-
+binance_data = 'data/'
 binance_ohlc_filepath = 'data/ohlc/'
-binance_batch_dl_filepath = 'data/external/batch/'
+binance_info_filepath = 'data/info/'
+binance_batch_dl_filepath = 'data/ohlc/temp/'
 binance_ohlc_inverse_filepath = 'data/ohlc/inverse/'
 binance_ohlc_linear_filepath = 'data/ohlc/linear/'
+
+binance_folder_structure = [
+    binance_data,
+    binance_info_filepath,
+    binance_ohlc_filepath,
+    binance_batch_dl_filepath,
+    binance_ohlc_inverse_filepath,
+    binance_ohlc_linear_filepath
+]
 
 binance_inverse_exchange_info_file = 'data/info/BINANCE_INVERSE_EXCHANGE_INFO.csv'
 binance_linear_exchange_info_file = 'data/info/BINANCE_LINEAR_EXCHANGE_INFO.csv'
 binance_spot_exchange_info_file = 'data/info/BINANCE_SPOT_EXCHANGE_INFO.csv'
+
+api_file_lines = [
+    '[binanceauth]',
+    'apikey = ',
+    'apisecret = '
+]

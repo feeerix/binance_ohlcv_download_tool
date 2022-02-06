@@ -1,12 +1,11 @@
 from tools import *
 
-pd.set_option('display.max_columns', None)
-pd.set_option('display.max_rows', None)
-pd.set_option('display.max_colwidth', None)
+# initialisation of folder structure
+create_folder_structure()
+create_api_cfg('api_key', 'api_secret')
 
-#
-# write_exchangeinfo()
+# example symbol to download
+symbol = 'BTCUSD_PERP'
 
-symbol = 'MANAUSD_PERP'
-
+# function to download OHLCV data
 update_db(symbol, 0, 0)
