@@ -1,4 +1,10 @@
 import configparser
+from tools import create_api_cfg
+from tools import create_folder_structure
+
+# initialisation of folder structure
+create_folder_structure()
+create_api_cfg('api_key', 'api_secret')
 
 binance_intervaltable = {
     '1m': 60,
@@ -70,10 +76,6 @@ binance_websocket_inverse_listenkey = '/dapi/v1/listenKey'
 binance_websocket_linear_listenkey = '/fapi/v1/listenKey'
 
 # API KEYS
-"""
-You will need to create a file, with the below filename, and add your api key and secret key.
-I have included a sample of how they 
-"""
 cfg_filepath = 'data/api.cfg'
 cfg = configparser.ConfigParser()
 cfg.read(cfg_filepath)

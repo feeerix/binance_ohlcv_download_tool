@@ -1172,9 +1172,9 @@ def earliest_online_db(symbol, interval):
 def update_db(symbol, start_time, end_time, **kwargs):
     """
     Symbol in string form; Ex: 'BTCUSD'
-    start and end time in int form
+    start and end time in unix timestamp in int form
 
-    if the start_time is 0 -> start update from last candle
+    if the start_time is 0 -> start update from available online db or last candle in local db
     if end_time is 0 -> update to last closed candle
 
     :param symbol: str
